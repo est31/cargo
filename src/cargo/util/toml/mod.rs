@@ -796,6 +796,16 @@ impl TomlManifest {
         let replace;
         let patch;
 
+        if let Some(implicit_deps) = config.cli_unstable().implicit_deps.get(&pkgid) {
+            deps.extend(implicit_deps.iter().map(|pkgid| {
+                Dependency::parse_no_deprecated(
+                    &pkgid.name(),
+                    Some(&pkgid.version().to_string()),
+                    pkgid.source_id()
+                ).unwrap()
+            }));
+        }
+
         {
             let mut cx = Context {
                 pkgid: Some(&pkgid),

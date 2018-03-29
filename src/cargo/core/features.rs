@@ -48,9 +48,11 @@
 use std::env;
 use std::fmt;
 use std::str::FromStr;
+use std::collections::HashMap;
 
 use failure::Error;
 
+use core::PackageId;
 use util::errors::CargoResult;
 
 /// The edition of the compiler (RFC 2052)
@@ -310,6 +312,10 @@ pub struct CliUnstable {
     pub package_features: bool,
     pub advanced_env: bool,
     pub config_profile: bool,
+
+    // The vector of package ids are implicitly dependencies of the key,
+    // despite not being in the Cargo.toml of the package.
+    pub implicit_deps: HashMap<PackageId, Vec<PackageId>>,
 }
 
 impl CliUnstable {
@@ -346,6 +352,12 @@ impl CliUnstable {
             "package-features" => self.package_features = true,
             "advanced-env" => self.advanced_env = true,
             "config-profile" => self.config_profile = true,
+            "implicit-dep" => {
+                let mut parts = v.unwrap().splitn(2, '=');
+                let to = PackageId::from_str(parts.next().unwrap())?;
+                let from = PackageId::from_str(parts.next().unwrap())?;
+                self.implicit_deps.entry(to).or_insert_with(Vec::new).push(from);
+            }
             _ => bail!("unknown `-Z` flag specified: {}", k),
         }
 

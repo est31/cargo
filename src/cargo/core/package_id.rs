@@ -46,31 +46,7 @@ impl<'de> de::Deserialize<'de> for PackageId {
         D: de::Deserializer<'de>,
     {
         let string = String::deserialize(d)?;
-        let mut s = string.splitn(3, ' ');
-        let name = s.next().unwrap();
-        let version = match s.next() {
-            Some(s) => s,
-            None => return Err(de::Error::custom("invalid serialized PackageId")),
-        };
-        let version = semver::Version::parse(version).map_err(de::Error::custom)?;
-        let url = match s.next() {
-            Some(s) => s,
-            None => return Err(de::Error::custom("invalid serialized PackageId")),
-        };
-        let url = if url.starts_with('(') && url.ends_with(')') {
-            &url[1..url.len() - 1]
-        } else {
-            return Err(de::Error::custom("invalid serialized PackageId"));
-        };
-        let source_id = SourceId::from_url(url).map_err(de::Error::custom)?;
-
-        Ok(PackageId {
-            inner: Arc::new(PackageIdInner {
-                name: InternedString::new(name),
-                version,
-                source_id,
-            }),
-        })
+        Ok(PackageId::from_str(&string).map_err(|err| de::Error::custom(format!("{}", err)))?)
     }
 }
 
@@ -100,6 +76,34 @@ impl Ord for PackageId {
 }
 
 impl PackageId {
+    pub fn from_str(s: &str) -> CargoResult<PackageId> {
+        let mut s = s.splitn(3, ' ');
+        let name = s.next().unwrap();
+        let version = match s.next() {
+            Some(s) => s,
+            None => bail!("invalid serialized PackageId"),
+        };
+        let version = semver::Version::parse(version)?;
+        let url = match s.next() {
+            Some(s) => s,
+            None => bail!("invalid serialized PackageId"),
+        };
+        let url = if url.starts_with('(') && url.ends_with(')') {
+            &url[1..url.len() - 1]
+        } else {
+            bail!("invalid serialized PackageId")
+        };
+        let source_id = SourceId::from_url(url)?;
+
+        Ok(PackageId {
+            inner: Arc::new(PackageIdInner {
+                name: InternedString::new(name),
+                version,
+                source_id,
+            }),
+        })
+    }
+
     pub fn new<T: ToSemver>(name: &str, version: T, sid: &SourceId) -> CargoResult<PackageId> {
         let v = version.to_semver()?;
         Ok(PackageId {
