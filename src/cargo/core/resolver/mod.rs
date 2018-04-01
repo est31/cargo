@@ -1043,9 +1043,10 @@ fn check_cycles(resolve: &Resolve, activations: &Activations) -> CargoResult<()>
     // Sort packages to produce user friendly deterministic errors.
     let all_packages = resolve.iter().collect::<BinaryHeap<_>>().into_sorted_vec();
     let mut checked = HashSet::new();
+    let mut tree = Vec::new();
     for pkg in all_packages {
         if !checked.contains(pkg) {
-            visit(resolve, pkg, &summaries, &mut HashSet::new(), &mut checked)?
+            visit(resolve, pkg, &summaries, &mut HashSet::new(), &mut checked, &mut tree)?
         }
     }
     return Ok(());
@@ -1056,14 +1057,19 @@ fn check_cycles(resolve: &Resolve, activations: &Activations) -> CargoResult<()>
         summaries: &HashMap<&'a PackageId, &Summary>,
         visited: &mut HashSet<&'a PackageId>,
         checked: &mut HashSet<&'a PackageId>,
+        tree: &mut Vec<&'a PackageId>,
     ) -> CargoResult<()> {
+        tree.push(id);
         // See if we visited ourselves
         if !visited.insert(id) {
-            bail!(
-                "cyclic package dependency: package `{}` depends on itself. Cycle:\n{}",
-                id,
-                describe_path(&resolve.path_to_top(id))
-            );
+            use std::fmt::Write;
+            let dep_path = &tree[tree.iter().position(|x| *x == id).unwrap()..];
+            let mut dep_path_desc = format!("package `{}`", dep_path[0]);
+            for dep in dep_path.iter().skip(1) {
+                write!(dep_path_desc, "\n    ... depends on `{}`", dep).unwrap();
+            }
+            bail!("cyclic package dependency: package `{}` depends on itself. Cycle:\n{}",
+                id, dep_path_desc);
         }
 
         // If we've already checked this node no need to recurse again as we'll
@@ -1081,18 +1087,21 @@ fn check_cycles(resolve: &Resolve, activations: &Activations) -> CargoResult<()>
                     .iter()
                     .any(|d| d.matches_id(dep) && d.is_transitive());
                 let mut empty = HashSet::new();
-                let visited = if is_transitive {
-                    &mut *visited
+                let mut empty_tree = Vec::new();
+                let (visited, tree) = if is_transitive {
+                    (&mut *visited, &mut *tree)
                 } else {
-                    &mut empty
+                    (&mut empty, &mut empty_tree)
                 };
-                visit(resolve, dep, summaries, visited, checked)?;
+                visit(resolve, dep, summaries, visited, checked, tree)?;
 
                 if let Some(id) = resolve.replacement(dep) {
-                    visit(resolve, id, summaries, visited, checked)?;
+                    visit(resolve, id, summaries, visited, checked, tree)?;
                 }
             }
         }
+
+        assert_eq!(tree.pop(), Some(id));
 
         // Ok, we're done, no longer visiting our node any more
         visited.remove(id);
