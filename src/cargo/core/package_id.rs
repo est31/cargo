@@ -76,22 +76,22 @@ impl Ord for PackageId {
 }
 
 impl PackageId {
-    pub fn from_str(s: &str) -> CargoResult<PackageId> {
-        let mut s = s.splitn(3, ' ');
+    pub fn from_str(input: &str) -> CargoResult<PackageId> {
+        let mut s = input.splitn(3, ' ');
         let name = s.next().unwrap();
         let version = match s.next() {
             Some(s) => s,
-            None => bail!("invalid serialized PackageId"),
+            None => bail!("invalid serialized PackageId: no version: {:?}", input),
         };
         let version = semver::Version::parse(version)?;
         let url = match s.next() {
             Some(s) => s,
-            None => bail!("invalid serialized PackageId"),
+            None => bail!("invalid serialized PackageId: no url: {:?}", input),
         };
         let url = if url.starts_with('(') && url.ends_with(')') {
             &url[1..url.len() - 1]
         } else {
-            bail!("invalid serialized PackageId")
+            bail!("invalid serialized PackageId, url end/start: {:?}", input)
         };
         let source_id = SourceId::from_url(url)?;
 
