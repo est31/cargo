@@ -313,6 +313,8 @@ pub struct CliUnstable {
     pub advanced_env: bool,
     pub config_profile: bool,
 
+    pub implicit_deps_enabled: bool,
+
     // The vector of package ids are implicitly dependencies of the key,
     // despite not being in the Cargo.toml of the package.
     pub implicit_deps: HashMap<PackageId, Vec<PackageId>>,
@@ -325,6 +327,15 @@ impl CliUnstable {
         }
         for flag in flags {
             self.add(flag)?;
+        }
+        if self.implicit_deps_enabled {
+            let var = env::var("CARGO_UNSTABLE_IMPLICIT_DEPS").unwrap();
+            for v in var.lines() {
+                let mut parts = v.splitn(2, '=');
+                let to = PackageId::from_str(parts.next().unwrap())?;
+                let from = PackageId::from_str(parts.next().unwrap())?;
+                self.implicit_deps.entry(to).or_insert_with(Vec::new).push(from);
+            }
         }
         Ok(())
     }
@@ -352,12 +363,7 @@ impl CliUnstable {
             "package-features" => self.package_features = true,
             "advanced-env" => self.advanced_env = true,
             "config-profile" => self.config_profile = true,
-            "implicit-dep" => {
-                let mut parts = v.unwrap().splitn(2, '=');
-                let to = PackageId::from_str(parts.next().unwrap())?;
-                let from = PackageId::from_str(parts.next().unwrap())?;
-                self.implicit_deps.entry(to).or_insert_with(Vec::new).push(from);
-            }
+            "implicit-deps" => self.implicit_deps_enabled = true,
             _ => bail!("unknown `-Z` flag specified: {}", k),
         }
 
