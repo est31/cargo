@@ -8,7 +8,7 @@ use semver::Version;
 use crate::core::dependency::Dependency;
 use crate::core::{PackageId, SourceId, Summary};
 use crate::sources::registry::RegistryData;
-use crate::sources::registry::{RegistryPackage, INDEX_LOCK};
+use crate::sources::registry::{RegistryPackage, INDEX_LOCK, MsrvInfos};
 use crate::util::{internal, CargoResult, Config, Filesystem, ToSemver};
 
 /// Crates.io treats hyphen and underscores as interchangeable
@@ -273,15 +273,20 @@ impl<'cfg> RegistryIndex<'cfg> {
         &mut self,
         dep: &Dependency,
         load: &mut dyn RegistryData,
+        msrv_infos: &mut MsrvInfos,
         f: &mut dyn FnMut(Summary),
     ) -> CargoResult<()> {
         let source_id = self.source_id;
         let name = dep.package_name().as_str();
         let ignore_yanked = self.config.ignore_yanked();
+        let local_msrv = msrv_infos.local_msrv();
         let summaries = self.summaries(name, load)?;
         let summaries = summaries
             .iter()
-            .filter(|&&(_, yanked)| dep.source_id().precise().is_some() || !yanked || ignore_yanked)
+            .filter(|&(summary, yanked)| {
+                let msrv_info = msrv_infos.get(&summary.package_id().name(), summary.package_id().version());
+                dep.source_id().precise().is_some() || ((!yanked || ignore_yanked) && local_msrv >= msrv_info)
+            })
             .map(|s| s.0.clone());
 
         // Handle `cargo update --precise` here. If specified, our own source

@@ -162,6 +162,7 @@ use std::borrow::Cow;
 use std::collections::BTreeMap;
 use std::fs::File;
 use std::path::{Path, PathBuf};
+use std::collections::HashMap;
 
 use flate2::read::GzDecoder;
 use log::debug;
@@ -184,12 +185,60 @@ pub const CRATES_IO_REGISTRY: &str = "crates-io";
 const CRATE_TEMPLATE: &str = "{crate}";
 const VERSION_TEMPLATE: &str = "{version}";
 
+pub struct MsrvInfos {
+    msrv_infos: HashMap<(String, Version), Version>,
+    local_msrv: Option<Version>,
+}
+
+fn get_local_msrv(config: &Config) -> Option<Version> {
+    let values = config.values().ok()?;
+    let msrv = values.get("msrv")?;
+    let msrv_str = msrv.string("").ok()?.0;
+    Version::parse(msrv_str).ok()
+}
+fn get_msrv_infos(config: &Config) -> Option<HashMap<(String, Version), Version>> {
+    let values = config.values().ok()?;
+    let path_value = values.get("msrv_infos")?;
+    let path = path_value.string("").ok()?.0;
+    let msrv_infos_str = std::fs::read_to_string(path).ok()?;
+    #[derive(Deserialize)]
+    struct MsrvInfo {
+        name: String,
+        vers: Version,
+        msrv: Version,
+    }
+    let msrv_infos: Vec<MsrvInfo> = serde_json::from_str(&msrv_infos_str).ok()?;
+    let msrv_infos = msrv_infos.into_iter()
+        .map(|MsrvInfo { name, vers, msrv }| ((name, vers), msrv))
+        .collect::<HashMap<(String, Version), Version>>();
+
+    Some(msrv_infos)
+}
+
+impl MsrvInfos {
+    pub fn new(config: &Config) -> Self {
+        Self {
+            msrv_infos: get_msrv_infos(config).unwrap_or_else(HashMap::new),
+            local_msrv: get_local_msrv(config),
+        }
+    }
+
+    fn get(&self, name: &str, v: &Version) -> Option<&Version> {
+        self.msrv_infos.get(&(name.to_string(), v.clone()))
+    }
+    /// Obtains the msrv used for resolution
+    fn local_msrv(&self) -> Option<&Version> {
+        self.local_msrv.as_ref()
+    }
+}
+
 pub struct RegistrySource<'cfg> {
     source_id: SourceId,
     src_path: Filesystem,
     config: &'cfg Config,
     updated: bool,
     ops: Box<dyn RegistryData + 'cfg>,
+    msrv_infos: MsrvInfos,
     index: index::RegistryIndex<'cfg>,
     index_locked: bool,
 }
@@ -408,6 +457,7 @@ impl<'cfg> RegistrySource<'cfg> {
             config,
             source_id,
             updated: false,
+            msrv_infos: MsrvInfos::new(config),
             index: index::RegistryIndex::new(source_id, ops.index_path(), config, index_locked),
             index_locked,
             ops,
@@ -505,7 +555,7 @@ impl<'cfg> Source for RegistrySource<'cfg> {
         if dep.source_id().precise().is_some() && !self.updated {
             debug!("attempting query without update");
             let mut called = false;
-            self.index.query_inner(dep, &mut *self.ops, &mut |s| {
+            self.index.query_inner(dep, &mut *self.ops, &mut self.msrv_infos, &mut |s| {
                 if dep.matches(&s) {
                     called = true;
                     f(s);
@@ -519,7 +569,7 @@ impl<'cfg> Source for RegistrySource<'cfg> {
             }
         }
 
-        self.index.query_inner(dep, &mut *self.ops, &mut |s| {
+        self.index.query_inner(dep, &mut *self.ops, &mut self.msrv_infos, &mut |s| {
             if dep.matches(&s) {
                 f(s);
             }
@@ -527,7 +577,7 @@ impl<'cfg> Source for RegistrySource<'cfg> {
     }
 
     fn fuzzy_query(&mut self, dep: &Dependency, f: &mut dyn FnMut(Summary)) -> CargoResult<()> {
-        self.index.query_inner(dep, &mut *self.ops, f)
+        self.index.query_inner(dep, &mut *self.ops, &mut self.msrv_infos, f)
     }
 
     fn supports_checksums(&self) -> bool {
