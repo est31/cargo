@@ -57,6 +57,8 @@ pub struct Config {
     frozen: bool,
     /// `locked` is set if we should not update lock files
     locked: bool,
+    /// Treat yanked crates as if they weren't yanked
+    ignore_yanked: bool,
     /// A global static IPC control mechanism (used for managing parallel builds)
     jobserver: Option<jobserver::Client>,
     /// Cli flags of the form "-Z something"
@@ -115,6 +117,7 @@ impl Config {
             extra_verbose: false,
             frozen: false,
             locked: false,
+            ignore_yanked: false,
             jobserver: unsafe {
                 if GLOBAL_JOBSERVER.is_null() {
                     None
@@ -548,6 +551,7 @@ impl Config {
         color: &Option<String>,
         frozen: bool,
         locked: bool,
+        ignore_yanked: bool,
         target_dir: &Option<PathBuf>,
         unstable_flags: &[String],
     ) -> CargoResult<()> {
@@ -592,6 +596,7 @@ impl Config {
         self.extra_verbose = extra_verbose;
         self.frozen = frozen;
         self.locked = locked;
+        self.ignore_yanked = ignore_yanked;
         self.target_dir = cli_target_dir;
         self.cli_flags.parse(unstable_flags)?;
 
@@ -616,6 +621,10 @@ impl Config {
 
     pub fn lock_update_allowed(&self) -> bool {
         !self.frozen && !self.locked
+    }
+
+    pub fn ignore_yanked(&self) -> bool {
+        self.ignore_yanked
     }
 
     /// Loads configuration from the filesystem

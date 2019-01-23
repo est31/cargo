@@ -153,6 +153,7 @@ fn execute_subcommand(config: &mut Config, args: &ArgMatches<'_>) -> CliResult {
         &args.value_of("color").map(|s| s.to_string()),
         args.is_present("frozen"),
         args.is_present("locked"),
+        args.is_present("ignore-yanked"),
         arg_target_dir,
         &args
             .values_of_lossy("unstable-features")
@@ -229,6 +230,7 @@ See 'cargo help <command>' for more information on a specific command.\n",
         )
         .arg(opt("frozen", "Require Cargo.lock and cache are up to date").global(true))
         .arg(opt("locked", "Require Cargo.lock is up to date").global(true))
+        .arg(opt("ignore-yanked", "Treat yanked crates as if they weren't yanked").global(true))
         .arg(
             Arg::with_name("unstable-features")
                 .help("Unstable (nightly-only) flags to Cargo, see 'cargo -Z help' for details")

@@ -277,10 +277,11 @@ impl<'cfg> RegistryIndex<'cfg> {
     ) -> CargoResult<()> {
         let source_id = self.source_id;
         let name = dep.package_name().as_str();
+        let ignore_yanked = self.config.ignore_yanked();
         let summaries = self.summaries(name, load)?;
         let summaries = summaries
             .iter()
-            .filter(|&&(_, yanked)| dep.source_id().precise().is_some() || !yanked)
+            .filter(|&&(_, yanked)| dep.source_id().precise().is_some() || !yanked || ignore_yanked)
             .map(|s| s.0.clone());
 
         // Handle `cargo update --precise` here. If specified, our own source
