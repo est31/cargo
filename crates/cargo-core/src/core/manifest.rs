@@ -97,7 +97,9 @@ pub struct ManifestMetadata {
     pub links: Option<String>,
 }
 
-#[derive(Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
+pub use cargo_util::core::TargetKind;
+
+/*#[derive(Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub enum TargetKind {
     Lib(Vec<CrateType>),
     Bin,
@@ -176,7 +178,7 @@ impl TargetKind {
             | TargetKind::Bin => vec![CrateType::Bin],
         }
     }
-}
+}*/
 
 /// Information about a binary, a library, an example, etc. that is part of the
 /// package.

@@ -1,6 +1,6 @@
 #![allow(unknown_lints)]
-
 use crate::core::{TargetKind, Workspace};
+
 use crate::ops::CompileOptions;
 use anyhow::Error;
 use std::fmt;
@@ -8,8 +8,9 @@ use std::path::PathBuf;
 use std::process::{ExitStatus, Output};
 use std::str;
 
-pub type CargoResult<T> = anyhow::Result<T>;
-
+pub use cargo_util::util::errors::*;
+//pub type CargoResult<T> = anyhow::Result<T>;
+/*
 // TODO: should delete this trait and just use `with_context` instead
 pub trait CargoResultExt<T, E> {
     fn chain_err<F, D>(self, f: F) -> CargoResult<T>
@@ -229,7 +230,42 @@ impl fmt::Display for CargoTestError {
 }
 
 impl std::error::Error for CargoTestError {}
+*/
+pub fn test_err_hint(this :&CargoTestError, ws: &Workspace<'_>, opts: &CompileOptions) -> String {
+    match this.test {
+        Test::UnitTest {
+            ref kind,
+            ref name,
+            ref pkg_name,
+        } => {
+            let pkg_info = if opts.spec.needs_spec_flag(ws) {
+                format!("-p {} ", pkg_name)
+            } else {
+                String::new()
+            };
 
+            match *kind {
+                TargetKind::Bench => {
+                    format!("test failed, to rerun pass '{}--bench {}'", pkg_info, name)
+                }
+                TargetKind::Bin => {
+                    format!("test failed, to rerun pass '{}--bin {}'", pkg_info, name)
+                }
+                TargetKind::Lib(_) => format!("test failed, to rerun pass '{}--lib'", pkg_info),
+                TargetKind::Test => {
+                    format!("test failed, to rerun pass '{}--test {}'", pkg_info, name)
+                }
+                TargetKind::ExampleBin | TargetKind::ExampleLib(_) => {
+                    format!("test failed, to rerun pass '{}--example {}", pkg_info, name)
+                }
+                _ => "test failed.".into(),
+            }
+        }
+        Test::Doc => "test failed, to rerun pass '--doc'".into(),
+        _ => "test failed.".into(),
+    }
+}
+/*
 #[derive(Debug)]
 pub enum Test {
     Multiple,
@@ -476,3 +512,4 @@ pub fn is_simple_exit_code(code: i32) -> bool {
 pub fn internal<S: fmt::Display>(error: S) -> anyhow::Error {
     InternalError::new(anyhow::format_err!("{}", error)).into()
 }
+*/
