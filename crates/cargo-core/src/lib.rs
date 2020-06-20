@@ -30,9 +30,6 @@
 // https://github.com/rust-lang/cargo/pull/7251#pullrequestreview-274914270
 #![allow(clippy::useless_conversion)]
 
-#[macro_use]
-extern crate cargo_core;
-
 use crate::core::shell::Verbosity::Verbose;
 use crate::core::Shell;
 use anyhow::Error;
@@ -47,18 +44,10 @@ pub const CARGO_ENV: &str = "CARGO";
 #[macro_use]
 mod macros;
 
-pub use cargo_core::{drop_println, drop_print, drop_eprint};
-
-//pub mod core;
-pub use cargo_core::core as core;
+pub mod core;
 pub mod ops;
-pub use cargo_core::sources as sources;
-//pub mod sources;
-//pub mod util;
-pub mod util {
-    pub use cargo_core::util::*;
-    pub mod command_prelude;
-}
+pub mod sources;
+pub mod util;
 
 pub struct CommitInfo {
     pub short_commit_hash: String,
