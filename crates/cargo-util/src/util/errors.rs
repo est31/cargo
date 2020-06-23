@@ -299,6 +299,7 @@ impl CargoTestError {
 // =============================================================================
 // CLI errors
 
+/*
 pub type CliResult = Result<(), CliError>;
 
 #[derive(Debug)]
@@ -346,6 +347,8 @@ impl From<clap::Error> for CliError {
         CliError::new(err.into(), code)
     }
 }
+
+*/
 
 // =============================================================================
 // Construction helpers

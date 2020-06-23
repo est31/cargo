@@ -37,7 +37,7 @@ use log::debug;
 use std::fmt;
 
 pub use crate::util::errors::{InternalError, VerboseError};
-pub use crate::util::{CargoResult, CliError, CliResult, Config};
+pub use crate::util::{CargoResult, /*CliError, CliResult,*/ Config};
 
 pub const CARGO_ENV: &str = "CARGO";
 
@@ -92,6 +92,7 @@ impl fmt::Display for VersionInfo {
     }
 }
 
+/*
 pub fn exit_with_error(err: CliError, shell: &mut Shell) -> ! {
     debug!("exit_with_error; err={:?}", err);
     if let Some(ref err) = err.error {
@@ -107,6 +108,7 @@ pub fn exit_with_error(err: CliError, shell: &mut Shell) -> ! {
 
     std::process::exit(exit_code)
 }
+*/
 
 /// Displays an error, and all its causes, to stderr.
 pub fn display_error(err: &Error, shell: &mut Shell) {

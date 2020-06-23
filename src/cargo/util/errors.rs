@@ -8,6 +8,9 @@ use std::path::PathBuf;
 use std::process::{ExitStatus, Output};
 use std::str;
 
+pub use cargo_core::util::errors::*;
+
+/*
 pub type CargoResult<T> = anyhow::Result<T>;
 
 // TODO: should delete this trait and just use `with_context` instead
@@ -294,7 +297,7 @@ impl CargoTestError {
         }
     }
 }
-
+*/
 // =============================================================================
 // CLI errors
 
@@ -345,7 +348,7 @@ impl From<clap::Error> for CliError {
         CliError::new(err.into(), code)
     }
 }
-
+/*
 // =============================================================================
 // Construction helpers
 
@@ -476,3 +479,4 @@ pub fn is_simple_exit_code(code: i32) -> bool {
 pub fn internal<S: fmt::Display>(error: S) -> anyhow::Error {
     InternalError::new(anyhow::format_err!("{}", error)).into()
 }
+*/

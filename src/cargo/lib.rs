@@ -57,6 +57,8 @@ pub use cargo_core::sources as sources;
 //pub mod util;
 pub mod util {
     pub use cargo_core::util::*;
+    pub use self::errors::{CliError, CliResult};
+    pub mod errors;
     pub mod command_prelude;
 }
 
