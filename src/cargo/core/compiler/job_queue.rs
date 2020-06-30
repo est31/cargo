@@ -68,6 +68,7 @@ use super::job::{
     Job,
 };
 use super::timings::Timings;
+use super::unused_dependencies::UnusedDepState;
 use super::{BuildContext, BuildPlan, CompileMode, Context, Unit};
 use crate::core::{PackageId, Shell, TargetKind};
 use crate::util::diagnostic_server::{self, DiagnosticPrinter};
@@ -127,6 +128,7 @@ struct DrainState<'cfg> {
     progress: Progress<'cfg>,
     next_id: u32,
     timings: Timings<'cfg>,
+    unused_dep_state: UnusedDepState,
 
     /// Tokens that are currently owned by this Cargo, and may be "associated"
     /// with a rustc process. They may also be unused, though if so will be
@@ -209,6 +211,7 @@ enum Message {
     FixDiagnostic(diagnostic_server::Message),
     Token(io::Result<Acquired>),
     Finish(JobId, Artifact, CargoResult<()>),
+    UnusedExterns(JobId, Vec<String>),
 
     // This client should get release_raw called on it with one of our tokens
     NeedsToken(JobId),
@@ -249,6 +252,15 @@ impl<'a> JobState<'a> {
         self.rmeta_required.set(false);
         self.messages
             .push(Message::Finish(self.id, Artifact::Metadata, Ok(())));
+    }
+
+    /// The rustc emitted the list of unused `--extern` args.
+    ///
+    /// This is useful for checking unused dependencies.
+    /// Should only be called once, as the compiler only emits it once per compilation.
+    pub fn unused_externs(&self, unused_externs: Vec<String>) {
+        self.messages
+            .push(Message::UnusedExterns(self.id, unused_externs));
     }
 
     /// The rustc underlying this Job is about to acquire a jobserver token (i.e., block)
@@ -369,6 +381,7 @@ impl<'cfg> JobQueue<'cfg> {
             progress,
             next_id: 0,
             timings: self.timings,
+            unused_dep_state: UnusedDepState::new_with_graph(cx), // TODO
             tokens: Vec::new(),
             rustc_tokens: HashMap::new(),
             to_send_clients: BTreeMap::new(),
@@ -546,6 +559,11 @@ impl<'cfg> DrainState<'cfg> {
                     }
                 }
             }
+            Message::UnusedExterns(id, unused_externs) => {
+                let unit = &self.active[&id];
+                self.unused_dep_state
+                    .record_unused_externs_for_unit(cx, unit, unused_externs);
+            }
             Message::Token(acquired_token) => {
                 let token = acquired_token.chain_err(|| "failed to acquire jobserver token")?;
                 self.tokens.push(token);
@@ -715,6 +733,10 @@ impl<'cfg> DrainState<'cfg> {
                     return (Err(e.into()),);
                 }
             }
+        }
+
+        if !cx.bcx.build_config.build_plan && cx.bcx.config.cli_unstable().warn_unused_deps {
+            drop(self.unused_dep_state.emit_unused_warnings(cx));
         }
 
         if let Some(e) = error {

@@ -15,14 +15,14 @@
 //! (for example, with and without tests), so we actually build a dependency
 //! graph of `Unit`s, which capture these properties.
 
-use crate::core::compiler::unit_graph::{UnitDep, UnitGraph};
+use crate::core::compiler::unit_graph::{UnitDep, UnitDependency, UnitGraph};
 use crate::core::compiler::UnitInterner;
 use crate::core::compiler::{CompileKind, CompileMode, RustcTargetData, Unit};
 use crate::core::dependency::DepKind;
 use crate::core::profiles::{Profile, Profiles, UnitFor};
 use crate::core::resolver::features::{FeaturesFor, ResolvedFeatures};
 use crate::core::resolver::Resolve;
-use crate::core::{Package, PackageId, PackageSet, Target, Workspace};
+use crate::core::{Dependency, Package, PackageId, PackageSet, Target, Workspace};
 use crate::ops::resolve_all_features;
 use crate::util::interning::InternedString;
 use crate::util::Config;
@@ -134,6 +134,9 @@ fn attach_std_deps(
         if !unit.kind.is_host() && !unit.mode.is_run_custom_build() {
             deps.extend(std_roots[&unit.kind].iter().map(|unit| UnitDep {
                 unit: unit.clone(),
+                // There is no dependency in the manifest giving rise to this
+                // as the dependency is implicit
+                dependency: UnitDependency(None),
                 unit_for: UnitFor::new_normal(),
                 extern_crate_name: unit.pkg.name(),
                 // TODO: Does this `public` make sense?
@@ -217,53 +220,55 @@ fn compute_deps(
     }
 
     let id = unit.pkg.package_id();
-    let filtered_deps = state.resolve().deps(id).filter(|&(_id, deps)| {
+    let filtered_deps = state.resolve().deps(id).filter_map(|(dep_id, deps)| {
         assert!(!deps.is_empty());
-        deps.iter().any(|dep| {
-            // If this target is a build command, then we only want build
-            // dependencies, otherwise we want everything *other than* build
-            // dependencies.
-            if unit.target.is_custom_build() != dep.is_build() {
-                return false;
-            }
-
-            // If this dependency is **not** a transitive dependency, then it
-            // only applies to test/example targets.
-            if !dep.is_transitive()
-                && !unit.target.is_test()
-                && !unit.target.is_example()
-                && !unit.mode.is_any_test()
-            {
-                return false;
-            }
-
-            // If this dependency is only available for certain platforms,
-            // make sure we're only enabling it for that platform.
-            if !state.target_data.dep_platform_activated(dep, unit.kind) {
-                return false;
-            }
-
-            // If this is an optional dependency, and the new feature resolver
-            // did not enable it, don't include it.
-            if dep.is_optional() {
-                let features_for = unit_for.map_to_features_for();
-
-                let feats = state.activated_features(id, features_for);
-                if !feats.contains(&dep.name_in_toml()) {
+        deps.iter()
+            .find(|dep| {
+                // If this target is a build command, then we only want build
+                // dependencies, otherwise we want everything *other than* build
+                // dependencies.
+                if unit.target.is_custom_build() != dep.is_build() {
                     return false;
                 }
-            }
 
-            // If we've gotten past all that, then this dependency is
-            // actually used!
-            true
-        })
+                // If this dependency is **not** a transitive dependency, then it
+                // only applies to test/example targets.
+                if !dep.is_transitive()
+                    && !unit.target.is_test()
+                    && !unit.target.is_example()
+                    && !unit.mode.is_any_test()
+                {
+                    return false;
+                }
+
+                // If this dependency is only available for certain platforms,
+                // make sure we're only enabling it for that platform.
+                if !state.target_data.dep_platform_activated(dep, unit.kind) {
+                    return false;
+                }
+
+                // If this is an optional dependency, and the new feature resolver
+                // did not enable it, don't include it.
+                if dep.is_optional() {
+                    let features_for = unit_for.map_to_features_for();
+
+                    let feats = state.activated_features(id, features_for);
+                    if !feats.contains(&dep.name_in_toml()) {
+                        return false;
+                    }
+                }
+
+                // If we've gotten past all that, then this dependency is
+                // actually used!
+                true
+            })
+            .map(|dep| (dep_id, dep.clone()))
     });
     // Separate line to avoid rustfmt indentation. Must collect due to `state` capture.
     let filtered_deps: Vec<_> = filtered_deps.collect();
 
     let mut ret = Vec::new();
-    for (id, _) in filtered_deps {
+    for (id, dep) in filtered_deps {
         let pkg = state.get(id);
         let lib = match pkg.targets().iter().find(|t| t.is_lib()) {
             Some(t) => t,
@@ -277,10 +282,28 @@ fn compute_deps(
 
         if state.config.cli_unstable().dual_proc_macros && lib.proc_macro() && !unit.kind.is_host()
         {
-            let unit_dep = new_unit_dep(state, unit, pkg, lib, dep_unit_for, unit.kind, mode)?;
+            let dep_cloned = Some(dep.clone());
+            let unit_dep = new_unit_dep(
+                state,
+                unit,
+                pkg,
+                lib,
+                dep_cloned,
+                dep_unit_for,
+                unit.kind,
+                mode,
+            )?;
             ret.push(unit_dep);
-            let unit_dep =
-                new_unit_dep(state, unit, pkg, lib, dep_unit_for, CompileKind::Host, mode)?;
+            let unit_dep = new_unit_dep(
+                state,
+                unit,
+                pkg,
+                lib,
+                Some(dep),
+                dep_unit_for,
+                CompileKind::Host,
+                mode,
+            )?;
             ret.push(unit_dep);
         } else {
             let unit_dep = new_unit_dep(
@@ -288,6 +311,7 @@ fn compute_deps(
                 unit,
                 pkg,
                 lib,
+                Some(dep),
                 dep_unit_for,
                 unit.kind.for_target(lib),
                 mode,
@@ -345,6 +369,7 @@ fn compute_deps(
                         unit,
                         &unit.pkg,
                         t,
+                        None,
                         UnitFor::new_normal(),
                         unit.kind.for_target(t),
                         CompileMode::Build,
@@ -394,6 +419,7 @@ fn compute_deps_custom_build(
         unit,
         &unit.pkg,
         &unit.target,
+        None,
         script_unit_for,
         // Build scripts always compiled for the host.
         CompileKind::Host,
@@ -436,6 +462,7 @@ fn compute_deps_doc(unit: &Unit, state: &mut State<'_, '_>) -> CargoResult<Vec<U
             unit,
             dep,
             lib,
+            None,
             dep_unit_for,
             unit.kind.for_target(lib),
             mode,
@@ -448,6 +475,7 @@ fn compute_deps_doc(unit: &Unit, state: &mut State<'_, '_>) -> CargoResult<Vec<U
                 unit,
                 dep,
                 lib,
+                None,
                 dep_unit_for,
                 unit.kind.for_target(lib),
                 unit.mode,
@@ -482,6 +510,7 @@ fn maybe_lib(
                 unit,
                 &unit.pkg,
                 t,
+                None,
                 unit_for,
                 unit.kind.for_target(t),
                 mode,
@@ -541,6 +570,7 @@ fn dep_build_script(
                 unit,
                 &unit.pkg,
                 t,
+                None,
                 script_unit_for,
                 unit.kind,
                 CompileMode::RunCustomBuild,
@@ -574,6 +604,7 @@ fn new_unit_dep(
     parent: &Unit,
     pkg: &Package,
     target: &Target,
+    dependency: Option<Dependency>,
     unit_for: UnitFor,
     kind: CompileKind,
     mode: CompileMode,
@@ -586,7 +617,9 @@ fn new_unit_dep(
         unit_for,
         mode,
     );
-    new_unit_dep_with_profile(state, parent, pkg, target, unit_for, kind, mode, profile)
+    new_unit_dep_with_profile(
+        state, parent, pkg, target, dependency, unit_for, kind, mode, profile,
+    )
 }
 
 fn new_unit_dep_with_profile(
@@ -594,6 +627,7 @@ fn new_unit_dep_with_profile(
     parent: &Unit,
     pkg: &Package,
     target: &Target,
+    dependency: Option<Dependency>,
     unit_for: UnitFor,
     kind: CompileKind,
     mode: CompileMode,
@@ -615,6 +649,7 @@ fn new_unit_dep_with_profile(
         .intern(pkg, target, profile, kind, mode, features, state.is_std, 0);
     Ok(UnitDep {
         unit,
+        dependency: UnitDependency(dependency),
         unit_for,
         extern_crate_name,
         public,

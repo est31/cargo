@@ -113,6 +113,7 @@ mod tool_paths;
 mod tree;
 mod tree_graph_features;
 mod unit_graph;
+mod unused_dependencies;
 mod update;
 mod vendor;
 mod verify_project;

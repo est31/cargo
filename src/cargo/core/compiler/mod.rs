@@ -19,6 +19,7 @@ mod timings;
 mod unit;
 pub mod unit_dependencies;
 pub mod unit_graph;
+pub mod unused_dependencies;
 
 use std::env;
 use std::ffi::{OsStr, OsString};
@@ -568,7 +569,7 @@ fn rustdoc(cx: &mut Context<'_, '_>, unit: &Unit) -> CargoResult<Work> {
         rustdoc.arg("--cfg").arg(&format!("feature=\"{}\"", feat));
     }
 
-    add_error_format_and_color(cx, &mut rustdoc, false)?;
+    add_error_format_and_color(cx, unit, &mut rustdoc, false)?;
 
     if let Some(args) = cx.bcx.extra_args_for(unit) {
         rustdoc.args(args);
@@ -692,6 +693,7 @@ fn add_cap_lints(bcx: &BuildContext<'_, '_>, unit: &Unit, cmd: &mut ProcessBuild
 /// which Cargo will extract and display to the user.
 fn add_error_format_and_color(
     cx: &Context<'_, '_>,
+    unit: &Unit,
     cmd: &mut ProcessBuilder,
     pipelined: bool,
 ) -> CargoResult<()> {
@@ -701,6 +703,12 @@ fn add_error_format_and_color(
         // Pipelining needs to know when rmeta files are finished. Tell rustc
         // to emit a message that cargo will intercept.
         json.push_str(",artifacts");
+    }
+
+    // Emit unused externs but only if the flag is enabled
+    // and only for units we are interested in.
+    if cx.bcx.config.cli_unstable().warn_unused_deps && unit.show_warnings(cx.bcx.config) {
+        json.push_str(",unused-externs");
     }
 
     match cx.bcx.build_config.message_format {
@@ -764,7 +772,7 @@ fn build_base_args(
     }
 
     add_path_args(bcx, unit, cmd);
-    add_error_format_and_color(cx, cmd, cx.rmeta_required(unit))?;
+    add_error_format_and_color(cx, unit, cmd, cx.rmeta_required(unit))?;
 
     if !test {
         for crate_type in crate_types.iter() {
@@ -1001,6 +1009,10 @@ fn build_deps_args(
 
     for arg in extern_args(cx, unit, &mut unstable_opts)? {
         cmd.arg(arg);
+    }
+
+    if cx.bcx.config.cli_unstable().warn_unused_deps {
+        unstable_opts = true;
     }
 
     // This will only be set if we're already using a feature
@@ -1271,6 +1283,19 @@ fn on_stderr_line_inner(
             }
             return Ok(false);
         }
+    }
+
+    #[derive(serde::Deserialize)]
+    struct UnusedExterns {
+        unused_extern_names: Vec<String>,
+    }
+    if let Ok(uext) = serde_json::from_str::<UnusedExterns>(compiler_message.get()) {
+        log::trace!(
+            "obtained unused externs list from rustc: `{:?}`",
+            uext.unused_extern_names
+        );
+        state.unused_externs(uext.unused_extern_names);
+        return Ok(true);
     }
 
     #[derive(serde::Deserialize)]
