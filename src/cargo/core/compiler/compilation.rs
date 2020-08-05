@@ -6,7 +6,8 @@ use std::path::PathBuf;
 use cargo_platform::CfgExpr;
 use semver::Version;
 
-use super::BuildContext;
+use super::unused_dependencies::UnusedDepState;
+use super::{BuildContext, UnitDep};
 use crate::core::compiler::CompileKind;
 use crate::core::compiler::Unit;
 use crate::core::{Edition, Package, PackageId};
@@ -16,6 +17,8 @@ use crate::util::{self, config, join_paths, process, CargoResult, Config, Proces
 pub struct Doctest {
     /// What's being doctested
     pub unit: Unit,
+    /// Dependencies of the unit
+    pub unit_deps: Vec<UnitDep>,
     /// Arguments needed to pass to rustdoc to run this test.
     pub args: Vec<OsString>,
     /// Whether or not -Zunstable-options is needed.
@@ -73,6 +76,8 @@ pub struct Compilation<'cfg> {
 
     /// The target host triple.
     pub host: String,
+
+    pub(crate) unused_dep_state: Option<UnusedDepState>,
 
     config: &'cfg Config,
 
@@ -133,6 +138,7 @@ impl<'cfg> Compilation<'cfg> {
             rustdocflags: HashMap::new(),
             config: bcx.config,
             host: bcx.host_triple().to_string(),
+            unused_dep_state: None,
             rustc_process: rustc,
             rustc_workspace_wrapper_process,
             primary_rustc_process,

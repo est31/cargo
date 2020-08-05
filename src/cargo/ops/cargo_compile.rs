@@ -864,7 +864,6 @@ fn generate_targets(
                 }
             }
             allowed_kinds.insert(DepKind::Normal);
-            allowed_kinds.insert(DepKind::Development);
         }
         CompileFilter::Only {
             all_targets,
@@ -925,12 +924,6 @@ fn generate_targets(
             };
 
             if *lib != LibRule::False {
-                match (bins, examples, tests, benches) {
-                    (FilterRule::All, FilterRule::All, FilterRule::All, FilterRule::All) => {
-                        allowed_kinds.insert(DepKind::Development);
-                    }
-                    _ => (),
-                }
                 match (bins, examples, tests, benches) {
                     (FilterRule::All, ..) => {
                         allowed_kinds.insert(DepKind::Normal);
