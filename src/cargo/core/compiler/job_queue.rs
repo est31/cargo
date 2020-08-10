@@ -68,7 +68,7 @@ use super::job::{
     Job,
 };
 use super::timings::Timings;
-use super::unused_dependencies::UnusedDepState;
+use super::unused_dependencies::{UnusedDepState, UnusedExterns};
 use super::{BuildContext, BuildPlan, CompileMode, Context, Unit};
 use crate::core::{PackageId, Shell, TargetKind};
 use crate::util::diagnostic_server::{self, DiagnosticPrinter};
@@ -211,7 +211,7 @@ enum Message {
     FixDiagnostic(diagnostic_server::Message),
     Token(io::Result<Acquired>),
     Finish(JobId, Artifact, CargoResult<()>),
-    UnusedExterns(JobId, Vec<String>),
+    UnusedExterns(JobId, UnusedExterns),
 
     // This client should get release_raw called on it with one of our tokens
     NeedsToken(JobId),
@@ -258,7 +258,7 @@ impl<'a> JobState<'a> {
     ///
     /// This is useful for checking unused dependencies.
     /// Should only be called once, as the compiler only emits it once per compilation.
-    pub fn unused_externs(&self, unused_externs: Vec<String>) {
+    pub fn unused_externs(&self, unused_externs: UnusedExterns) {
         self.messages
             .push(Message::UnusedExterns(self.id, unused_externs));
     }
